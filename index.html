@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ポケモン全国図鑑番号当てクイズ</title>
+  <title>ポケモン図鑑番号→名前当てクイズ</title>
   <style>
     :root {
       --primary: #e63946;
@@ -50,7 +50,7 @@
       font-size: 0.85rem;
       font-weight: bold;
     }
-    select, input[type="number"], button {
+    select, input[type="text"], button {
       padding: 10px;
       border-radius: 8px;
       border: 1px solid #ccc;
@@ -68,25 +68,16 @@
     .quiz-area {
       text-align: center;
     }
-    .pokemon-img-wrap {
-      width: 160px;
-      height: 160px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #f1f3f5;
-      border-radius: 50%;
-    }
-    .pokemon-img {
-      width: 140px;
-      height: 140px;
-      object-fit: contain;
-    }
-    .pokemon-name {
-      font-size: 1.5rem;
-      font-weight: bold;
-      margin: 12px 0;
+    .number-badge {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: var(--text);
+      background: #e9ecef;
+      display: inline-block;
+      padding: 12px 32px;
+      border-radius: 14px;
+      margin: 8px 0 16px;
+      letter-spacing: 1px;
     }
     .hints-area {
       margin: 12px 0;
@@ -121,16 +112,18 @@
       display: none;
       text-align: left;
     }
+    .answer-wrap {
+      position: relative;
+      margin-top: 16px;
+    }
     .answer-group {
       display: flex;
       gap: 8px;
-      margin-top: 16px;
     }
     .answer-group input {
       flex: 1;
       margin-top: 0;
-      text-align: center;
-      font-size: 1.1rem;
+      font-size: 1.05rem;
     }
     .btn-submit {
       background: var(--primary);
@@ -141,15 +134,72 @@
       margin-top: 0;
       padding: 0 20px;
     }
+    .btn-submit:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .suggest-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 10;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      text-align: left;
+    }
+    .suggest-item {
+      padding: 10px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f1f3f5;
+      font-size: 0.95rem;
+    }
+    .suggest-item:hover {
+      background: #f1faee;
+    }
     .result-box {
       margin-top: 16px;
-      padding: 14px;
-      border-radius: 10px;
+      padding: 16px;
+      border-radius: 12px;
       background: #e9ecef;
       display: none;
     }
+    .compare-cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .poke-card {
+      background: #fff;
+      padding: 10px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .poke-card img {
+      width: 84px;
+      height: 84px;
+      object-fit: contain;
+    }
+    .poke-card-label {
+      font-size: 0.75rem;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .poke-card-name {
+      font-weight: bold;
+      font-size: 0.95rem;
+      margin-top: 4px;
+    }
     .diff-highlight {
-      font-size: 1.3rem;
+      font-size: 1.4rem;
       font-weight: bold;
       color: var(--primary);
     }
@@ -175,7 +225,7 @@
 <body>
 
 <div class="container">
-  <h1>ポケモン図鑑番号当てクイズ</h1>
+  <h1>ポケモン図鑑番号クイズ</h1>
 
   <!-- フィルター設定 -->
   <div class="filter-box">
@@ -192,11 +242,8 @@
 
   <!-- 出題エリア -->
   <div class="quiz-area">
-    <div class="pokemon-img-wrap">
-      <img id="pokemonImg" class="pokemon-img" src="" alt="pokemon" style="display:none;">
-      <span id="loadingText">読み込み中...</span>
-    </div>
-    <div class="pokemon-name" id="pokemonName">---</div>
+    <div style="font-size:0.9rem; color:#555;">この図鑑番号のポケモンは？</div>
+    <div class="number-badge" id="questionNumber">読み込み中...</div>
 
     <!-- ヒント機能 -->
     <div class="hints-area">
@@ -208,14 +255,29 @@
       <div class="hint-box" id="hintEvoBox"></div>
     </div>
 
-    <!-- 解答入力 -->
-    <div class="answer-group">
-      <input type="number" id="guessInput" placeholder="図鑑番号 (1〜1025)" min="1" max="1025">
-      <button class="btn-submit" id="submitBtn">解答する</button>
+    <!-- 解答入力（サジェスト付き） -->
+    <div class="answer-wrap">
+      <div class="answer-group">
+        <input type="text" id="guessInput" placeholder="ポケモン名を入力 (ひらがな可)" autocomplete="off">
+        <button class="btn-submit" id="submitBtn" disabled>解答する</button>
+      </div>
+      <div class="suggest-list" id="suggestList"></div>
     </div>
 
     <!-- 結果表示 -->
     <div class="result-box" id="resultBox">
+      <div class="compare-cards">
+        <div class="poke-card">
+          <div class="poke-card-label">あなたの解答</div>
+          <img id="guessImg" src="" alt="guess">
+          <div class="poke-card-name" id="guessTitle"></div>
+        </div>
+        <div class="poke-card">
+          <div class="poke-card-label">正解のポケモン</div>
+          <img id="answerImg" src="" alt="answer">
+          <div class="poke-card-name" id="answerTitle"></div>
+        </div>
+      </div>
       <div id="resultText"></div>
       <button class="btn-next" id="nextBtn">次の問題へ</button>
     </div>
@@ -231,8 +293,7 @@
 /**
  * ==========================================
  * 1. 拡張用マスター設定 (JSON互換オブジェクト)
- * 後から外部JSONファイル(config.json等)に切り出したり、
- * 項目を追加して機能を拡張しやすい構造にしています。
+ * 将来別ファイルの config.json などに分離・拡張可能
  * ==========================================
  */
 const APP_CONFIG = {
@@ -260,37 +321,47 @@ const APP_CONFIG = {
     { id: "dragon", ja: "ドラゴン" }, { id: "dark", ja: "あく" },
     { id: "steel", ja: "はがね" }, { id: "fairy", ja: "フェアリー" }
   ],
-  // 将来的に独自のヒントやメモを追加できるカスタム辞書
   customData: {}
 };
 
 // 状態管理
+let nameDictionary = []; // [{ id: 1, name: "フシギダネ" }, ...]
 let candidateIds = [];
 let currentPokemon = null;
 let playCount = 0;
 let totalDiff = 0;
-const typeCache = {}; // タイプ別IDリストのキャッシュ
+const typeCache = {};
 
 // DOM要素
 const regionSelect = document.getElementById("regionSelect");
 const typeSelect = document.getElementById("typeSelect");
 const applyFilterBtn = document.getElementById("applyFilterBtn");
-const pokemonImg = document.getElementById("pokemonImg");
-const loadingText = document.getElementById("loadingText");
-const pokemonName = document.getElementById("pokemonName");
+const questionNumber = document.getElementById("questionNumber");
 const hintTypeBtn = document.getElementById("hintTypeBtn");
 const hintEvoBtn = document.getElementById("hintEvoBtn");
 const hintTypeBox = document.getElementById("hintTypeBox");
 const hintEvoBox = document.getElementById("hintEvoBox");
 const guessInput = document.getElementById("guessInput");
+const suggestList = document.getElementById("suggestList");
 const submitBtn = document.getElementById("submitBtn");
 const resultBox = document.getElementById("resultBox");
+const guessImg = document.getElementById("guessImg");
+const guessTitle = document.getElementById("guessTitle");
+const answerImg = document.getElementById("answerImg");
+const answerTitle = document.getElementById("answerTitle");
 const resultText = document.getElementById("resultText");
 const nextBtn = document.getElementById("nextBtn");
 const statsBar = document.getElementById("statsBar");
 
+// ひらがな→カタカナ変換（入力補助用）
+function hiraToKata(str) {
+  return str.replace(/[\u3041-\u3096]/g, ch =>
+    String.fromCharCode(ch.charCodeAt(0) + 0x60)
+  );
+}
+
 // 初期化
-function init() {
+async function init() {
   APP_CONFIG.regions.forEach(r => {
     const opt = document.createElement("option");
     opt.value = r.id;
@@ -309,16 +380,79 @@ function init() {
   hintEvoBtn.addEventListener("click", showEvoHint);
   submitBtn.addEventListener("click", checkAnswer);
   nextBtn.addEventListener("click", loadNextQuestion);
+
+  guessInput.addEventListener("input", handleSuggest);
   guessInput.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !submitBtn.disabled) checkAnswer();
+    if (e.key === "Enter" && !submitBtn.disabled) {
+      suggestList.style.display = "none";
+      checkAnswer();
+    }
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".answer-wrap")) suggestList.style.display = "none";
   });
 
-  updateCandidatesAndLoad();
+  questionNumber.textContent = "辞書データ準備中...";
+  await loadJapaneseNameDictionary();
+  await updateCandidatesAndLoad();
+}
+
+/**
+ * PokeAPI GraphQLで全1025匹の日本語名辞書を一括取得（初回のみ・高速）
+ */
+async function loadJapaneseNameDictionary() {
+  const query = `
+    query {
+      pokemon_v2_pokemonspeciesname(where: {language_id: {_eq: 1}, pokemon_species_id: {_lte: 1025}}) {
+        pokemon_species_id
+        name
+      }
+    }
+  `;
+  const res = await fetch("https://beta.pokeapi.co/graphql/v1beta", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query })
+  });
+  const json = await res.json();
+  nameDictionary = json.data.pokemon_v2_pokemonspeciesname
+    .map(item => ({ id: item.pokemon_species_id, name: item.name }))
+    .sort((a, b) => a.id - b.id);
+}
+
+// 入力サジェスト表示
+function handleSuggest() {
+  const raw = guessInput.value.trim();
+  if (!raw) {
+    suggestList.style.display = "none";
+    return;
+  }
+  const kata = hiraToKata(raw);
+  const matches = nameDictionary.filter(p => p.name.includes(kata)).slice(0, 8);
+
+  if (matches.length === 0) {
+    suggestList.style.display = "none";
+    return;
+  }
+
+  suggestList.innerHTML = "";
+  matches.forEach(m => {
+    const div = document.createElement("div");
+    div.className = "suggest-item";
+    div.textContent = m.name;
+    div.addEventListener("click", () => {
+      guessInput.value = m.name;
+      suggestList.style.display = "none";
+      guessInput.focus();
+    });
+    suggestList.appendChild(div);
+  });
+  suggestList.style.display = "block";
 }
 
 // フィルター条件から出題候補IDリストを作成
 async function updateCandidatesAndLoad() {
-  setLoadingState(true, "フィルター適用中...");
+  questionNumber.textContent = "フィルター適用中...";
   const regionId = regionSelect.value;
   const typeId = typeSelect.value;
   const region = APP_CONFIG.regions.find(r => r.id === regionId);
@@ -332,7 +466,6 @@ async function updateCandidatesAndLoad() {
     if (!typeCache[typeId]) {
       const res = await fetch(`https://pokeapi.co/api/v2/type/${typeId}`);
       const data = await res.json();
-      // URLから全国図鑑番号(1〜1025)を抽出
       typeCache[typeId] = data.pokemon
         .map(p => Number(p.pokemon.url.split("/").filter(Boolean).pop()))
         .filter(id => id >= 1 && id <= 1025);
@@ -342,7 +475,7 @@ async function updateCandidatesAndLoad() {
   }
 
   if (candidateIds.length === 0) {
-    setLoadingState(true, "該当するポケモンがいません。条件を変えてください。");
+    questionNumber.textContent = "該当なし";
     return;
   }
 
@@ -351,29 +484,22 @@ async function updateCandidatesAndLoad() {
 
 // 次の問題を出題
 async function loadNextQuestion() {
-  setLoadingState(true, "ポケモンを探しています...");
   resetQuestionUI();
-
   const randomId = candidateIds[Math.floor(Math.random() * candidateIds.length)];
+  questionNumber.textContent = `No.${randomId}`;
 
   try {
     currentPokemon = await fetchPokemonData(randomId);
-    pokemonImg.src = currentPokemon.image;
-    pokemonImg.style.display = "block";
-    loadingText.style.display = "none";
-    pokemonName.textContent = currentPokemon.nameJa;
     submitBtn.disabled = false;
     guessInput.focus();
   } catch (err) {
-    setLoadingState(true, "通信エラーが発生しました。再試行してください。");
+    questionNumber.textContent = "通信エラー";
   }
 }
 
 /**
  * ==========================================
  * 2. PokeAPI データ取得＆拡張用モジュール
- * 後から身長・体重・特性・鳴き声・図鑑説明文などを
- * 追加したい場合は、この関数の return に足すだけで拡張可能です。
  * ==========================================
  */
 async function fetchPokemonData(id) {
@@ -384,32 +510,32 @@ async function fetchPokemonData(id) {
   const pokeData = await pokeRes.json();
   const speciesData = await speciesRes.json();
 
-  // 日本語名取得
-  const jaNameObj = speciesData.names.find(n => n.language.name === "ja-Hrkt" || n.language.name === "ja");
-  const nameJa = jaNameObj ? jaNameObj.name : pokeData.name;
+  const dictEntry = nameDictionary.find(p => p.id === id);
+  const nameJa = dictEntry ? dictEntry.name : pokeData.name;
 
-  // タイプ日本語変換
   const typesJa = pokeData.types.map(t => {
     const found = APP_CONFIG.types.find(item => item.id === t.type.name);
     return found ? found.ja : t.type.name;
   });
 
-  // 地方判定
   const regionObj = APP_CONFIG.regions.find(r => r.id !== "all" && id >= r.min && id <= r.max);
 
   return {
     id: pokeData.id,
     nameJa: nameJa,
-    image: pokeData.sprites.other["official-artwork"].front_default || pokeData.sprites.front_default,
+    image: getArtworkUrl(pokeData.id),
     typesJa: typesJa,
     regionName: regionObj ? regionObj.name.split(" ")[0] : "不明",
     evolutionChainUrl: speciesData.evolution_chain ? speciesData.evolution_chain.url : null,
-    evoHintText: null, // ヒント2ボタン押下時に遅延取得してキャッシュ
-    // 将来の拡張用データ枠
+    evoHintText: null,
     rawPoke: pokeData,
     rawSpecies: speciesData,
     custom: APP_CONFIG.customData[id] || {}
   };
+}
+
+function getArtworkUrl(id) {
+  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`;
 }
 
 // ヒント1: タイプ表示
@@ -443,13 +569,10 @@ async function showEvoHint() {
   }
 }
 
-// 進化チェーンツリーを探索して何段階目・進化有無かを判定
 function analyzeEvolutionChain(chainNode, targetId) {
   function extractId(url) {
     return Number(url.split("/").filter(Boolean).pop());
   }
-
-  // 再帰探索: [現在の段階(1始まり), さらに進化先があるか, チェーン全体で進化が存在するか]
   const totalHasEvolution = chainNode.evolves_to && chainNode.evolves_to.length > 0;
   if (!totalHasEvolution) {
     return "進化情報: 進化しないポケモン（単体）";
@@ -474,7 +597,6 @@ function analyzeEvolutionChain(chainNode, targetId) {
     }
     return false;
   }
-
   dfs(chainNode, 1);
   return resultText;
 }
@@ -482,31 +604,41 @@ function analyzeEvolutionChain(chainNode, targetId) {
 // 解答チェックと誤差計算
 function checkAnswer() {
   if (!currentPokemon) return;
-  const guess = parseInt(guessInput.value, 10);
-  if (isNaN(guess) || guess < 1 || guess > 1025) {
-    alert("1〜1025の数値を入力してください！");
+  const rawInput = hiraToKata(guessInput.value.trim());
+  const guessedPoke = nameDictionary.find(p => p.name === rawInput);
+
+  if (!guessedPoke) {
+    alert("該当するポケモン名が見つかりません。候補から選ぶか正確な名前を入力してください！");
     return;
   }
 
   submitBtn.disabled = true;
-  const actual = currentPokemon.id;
-  const diff = Math.abs(actual - guess);
+  suggestList.style.display = "none";
+
+  const actualId = currentPokemon.id;
+  const guessId = guessedPoke.id;
+  const diff = Math.abs(actualId - guessId);
 
   playCount++;
   totalDiff += diff;
   const avgDiff = (totalDiff / playCount).toFixed(1);
   statsBar.textContent = `プレイ回数: ${playCount}回 | 平均誤差: ±${avgDiff}`;
 
+  guessImg.src = getArtworkUrl(guessId);
+  guessTitle.textContent = `No.${guessId} ${guessedPoke.name}`;
+
+  answerImg.src = currentPokemon.image;
+  answerTitle.textContent = `No.${actualId} ${currentPokemon.nameJa}`;
+
   let comment = "";
-  if (diff === 0) comment = "🎉 ピッタリ大正解！！素晴らしい知識です！";
-  else if (diff <= 5) comment = "🔥 惜しい！ほぼピッタリです！";
-  else if (diff <= 20) comment = "✨ かなり近いです！";
+  if (diff === 0) comment = "🎉 ピッタリ大正解！！完璧です！";
+  else if (diff <= 5) comment = "🔥 惜しい！すぐ近くの番号です！";
+  else if (diff <= 20) comment = "✨ かなり近い図鑑番号です！";
   else if (diff <= 50) comment = "👍 そこそこ近いです！";
   else comment = "💡 次はヒントも活用してみましょう！";
 
   resultText.innerHTML = `
-    <div>あなたの解答: <strong>No.${guess}</strong> / 正解: <strong>No.${actual}</strong> (${currentPokemon.regionName})</div>
-    <div style="margin: 8px 0;">番号誤差: <span class="diff-highlight">±${diff}</span></div>
+    <div style="margin: 6px 0;">図鑑番号の誤差: <span class="diff-highlight">±${diff}</span></div>
     <div>${comment}</div>
   `;
   resultBox.style.display = "block";
@@ -514,21 +646,13 @@ function checkAnswer() {
 
 function resetQuestionUI() {
   guessInput.value = "";
+  suggestList.style.display = "none";
   resultBox.style.display = "none";
   hintTypeBox.style.display = "none";
   hintEvoBox.style.display = "none";
   hintTypeBtn.disabled = false;
   hintEvoBtn.disabled = false;
   submitBtn.disabled = true;
-}
-
-function setLoadingState(isLoading, text = "") {
-  if (isLoading) {
-    pokemonImg.style.display = "none";
-    loadingText.style.display = "inline";
-    loadingText.textContent = text;
-    pokemonName.textContent = "---";
-  }
 }
 
 init();
