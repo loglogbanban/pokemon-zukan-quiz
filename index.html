@@ -410,24 +410,76 @@ async function init() {
   await updateCandidatesAndLoad();
 }
 
+/**
+ * 安定版・日本語名辞書の取得
+ * 1. localStorageキャッシュにあれば即座に読み込み（0秒）
+ * 2. GitHub上のPokeAPI公式マスターCSVから日本語名（local_language_id=1）を高速抽出
+ * 3. 万が一失敗した場合は新GraphQLエンドポイントへフォールバック
+ */
 async function loadJapaneseNameDictionary() {
-  const query = `
-    query {
-      pokemon_v2_pokemonspeciesname(where: {language_id: {_eq: 1}, pokemon_species_id: {_lte: 1025}}) {
-        pokemon_species_id
-        name
+  const CACHE_KEY = "poke_ja_dict_v1";
+  const cached = localStorage.getItem(CACHE_KEY);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length >= 1000) {
+        nameDictionary = parsed;
+        return;
+      }
+    } catch (e) {}
+  }
+
+  // 方法A: GitHub上のPokeAPI公式CSVデータから取得（極めて安定・高速）
+  try {
+    const csvUrl = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv";
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error("CSV fetch failed");
+    const text = await res.text();
+    const lines = text.split(/\r?\n/);
+    const dict = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      // 形式: pokemon_species_id,local_language_id,name,genus
+      const parts = line.split(",");
+      const id = parseInt(parts[0], 10);
+      const lang = parseInt(parts[1], 10);
+      if (lang === 1 && id >= 1 && id <= 1025) {
+        dict.push({ id: id, name: parts[2].trim() });
       }
     }
-  `;
-  const res = await fetch("https://beta.pokeapi.co/graphql/v1beta", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query })
-  });
-  const json = await res.json();
-  nameDictionary = json.data.pokemon_v2_pokemonspeciesname
-    .map(item => ({ id: item.pokemon_species_id, name: item.name }))
-    .sort((a, b) => a.id - b.id);
+    if (dict.length > 0) {
+      nameDictionary = dict.sort((a, b) => a.id - b.id);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(nameDictionary)); } catch (e) {}
+      return;
+    }
+  } catch (err) {
+    console.warn("CSVからの辞書取得に失敗、GraphQLへ切り替えます:", err);
+  }
+
+  // 方法B: 予備（新GraphQLサーバー）
+  try {
+    const query = `
+      query {
+        pokemon_v2_pokemonspeciesname(where: {language_id: {_eq: 1}, pokemon_species_id: {_lte: 1025}}) {
+          pokemon_species_id
+          name
+        }
+      }
+    `;
+    const res = await fetch("https://graphql.pokeapi.co/v1beta2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query })
+    });
+    const json = await res.json();
+    nameDictionary = json.data.pokemon_v2_pokemonspeciesname
+      .map(item => ({ id: item.pokemon_species_id, name: item.name }))
+      .sort((a, b) => a.id - b.id);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(nameDictionary)); } catch (e) {}
+  } catch (err) {
+    questionNumber.textContent = "辞書取得エラー(再読込してください)";
+  }
 }
 
 function handleSuggest() {
@@ -513,7 +565,8 @@ async function fetchPokemonData(id) {
   const speciesData = await speciesRes.json();
 
   const dictEntry = nameDictionary.find(p => p.id === id);
-  const nameJa = dictEntry ? dictEntry.name : pokeData.name;
+  const jaNameObj = speciesData.names ? speciesData.names.find(n => n.language.name === "ja-Hrkt" || n.language.name === "ja") : null;
+  const nameJa = dictEntry ? dictEntry.name : (jaNameObj ? jaNameObj.name : pokeData.name);
 
   const typesJa = pokeData.types.map(t => {
     const found = APP_CONFIG.types.find(item => item.id === t.type.name);
